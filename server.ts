@@ -17,7 +17,7 @@ async function startServer() {
   app.use(express.json());
   app.use(cookieParser());
 
-  // --- ALL GITHUB FEATURES PRESERVED ---
+  // --- GITHUB AUTH (FIXED FOR TYPESCRIPT) ---
   app.get('/api/auth/github/url', (req, res) => {
     const clientId = process.env.GITHUB_CLIENT_ID;
     const redirectUri = `${req.protocol}://${req.get('host')}/api/auth/github/callback`;
@@ -27,22 +27,34 @@ async function startServer() {
   app.get('/api/auth/github/callback', async (req, res) => {
     const { code } = req.query;
     try {
-      const tokenRes = await axios.post('https://github.com/login/oauth/access_token', {
+      // Added <any> here to fix the "Property access_token does not exist" error
+      const tokenRes = await axios.post<any>('https://github.com/login/oauth/access_token', {
         client_id: process.env.GITHUB_CLIENT_ID,
         client_secret: process.env.GITHUB_CLIENT_SECRET,
         code,
       }, { headers: { Accept: 'application/json' } });
 
-      const userRes = await axios.get('https://api.github.com/user', {
-        headers: { Authorization: `token ${tokenRes.data.access_token}` },
+      const accessToken = tokenRes.data.access_token;
+
+      // Added <any> here to ensure user data is read correctly
+      const userRes = await axios.get<any>('https://api.github.com/user', {
+        headers: { Authorization: `token ${accessToken}` },
       });
 
       res.cookie('github_user', JSON.stringify(userRes.data), {
-        httpOnly: true, secure: true, sameSite: 'none', maxAge: 30 * 24 * 60 * 60 * 1000,
+        httpOnly: true, 
+        secure: true, 
+        sameSite: 'none', 
+        maxAge: 30 * 24 * 60 * 60 * 1000,
       });
 
-      res.send('<html><body><script>window.opener.postMessage({type:"GITHUB_AUTH_SUCCESS"}, "*");window.close();</script></body></html>');
-    } catch (e) { res.status(500).send('Auth Failed'); }
+      res.send(`<html><body><script>
+        window.opener.postMessage({type:"GITHUB_AUTH_SUCCESS"}, "*");
+        window.close();
+      </script></body></html>`);
+    } catch (e) { 
+      res.status(500).send('Authentication Failed'); 
+    }
   });
 
   app.get('/api/user/github', (req, res) => {
@@ -64,7 +76,7 @@ async function startServer() {
     app.get('*', (req, res) => res.sendFile(path.join(distPath, 'index.html')));
   }
 
-  app.listen(Number(PORT), '0.0.0.0');
+  app.listen(Number(PORT), '0.0.0.0', () => console.log('Server Running'));
 }
 
 startServer();
